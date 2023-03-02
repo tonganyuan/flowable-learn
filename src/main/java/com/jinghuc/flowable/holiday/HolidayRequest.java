@@ -1,15 +1,18 @@
 package com.jinghuc.flowable.holiday;
 
-import org.flowable.engine.ProcessEngine;
-import org.flowable.engine.ProcessEngineConfiguration;
-import org.flowable.engine.RepositoryService;
-import org.flowable.engine.RuntimeService;
+import com.jinghuc.flowable.holiday.event.MyCustomEvent;
+import com.jinghuc.flowable.holiday.event.MyCustomEventListener;
+import org.flowable.engine.*;
+import org.flowable.engine.common.api.delegate.event.FlowableEngineEventType;
+import org.flowable.engine.history.HistoricActivityInstance;
 import org.flowable.engine.impl.cfg.StandaloneProcessEngineConfiguration;
 import org.flowable.engine.repository.Deployment;
 import org.flowable.engine.repository.ProcessDefinition;
 import org.flowable.engine.runtime.ProcessInstance;
+import org.flowable.task.api.Task;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
 
@@ -66,5 +69,47 @@ public class HolidayRequest {
         ProcessInstance processInstance =
                 runtimeService.startProcessInstanceByKey("holidayRequest", variables);
 
+
+        runtimeService.addEventListener(new MyCustomEventListener(), FlowableEngineEventType.TASK_COMPLETED);
+
+
+        TaskService taskService = processEngine.getTaskService();
+        List<Task> tasks = taskService.createTaskQuery().taskCandidateGroup("managers").list();
+        System.out.println("You have " + tasks.size() + " tasks:");
+        for (int i=0; i<tasks.size(); i++) {
+            System.out.println((i+1) + ") " + tasks.get(i).getName());
+        }
+
+
+        System.out.println("Which task would you like to complete?");
+        int taskIndex = Integer.valueOf(scanner.nextLine());
+        Task task = tasks.get(taskIndex - 1);
+        Map<String, Object> processVariables = taskService.getVariables(task.getId());
+        System.out.println(processVariables.get("employee") + " wants " +
+                processVariables.get("nrOfHolidays") + " of holidays. Do you approve this?");
+
+        boolean approved = scanner.nextLine().toLowerCase().equals("y");
+        variables = new HashMap<String, Object>();
+        variables.put("approved", approved);
+        taskService.complete(task.getId(), variables);
+        runtimeService.dispatchEvent(new MyCustomEvent());
+        HistoryService historyService = processEngine.getHistoryService();
+        List<HistoricActivityInstance> activities =
+                historyService.createHistoricActivityInstanceQuery()
+                        .processInstanceId(processInstance.getId())
+                        .finished()
+                        .orderByHistoricActivityInstanceEndTime().asc()
+                        .list();
+
+        for (HistoricActivityInstance activity : activities) {
+            System.out.println(activity.getActivityId() + " took "
+                    + activity.getDurationInMillis() + " milliseconds");
+        }
+
+        List<Task> employeeTasks = taskService.createTaskQuery().taskAssignee("tom").list();
+        System.out.println("tom have " + tasks.size() + " tasks:");
+        for (int i=0; i<employeeTasks.size(); i++) {
+            System.out.println((i+1) + ") " + employeeTasks.get(i).getName());
+        }
     }
 }
